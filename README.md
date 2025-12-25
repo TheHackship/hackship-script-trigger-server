@@ -50,11 +50,19 @@ hackship-automation-server/
 
 ### Important
 ---
-ensure that script.sh is executable using below command
+Ensure that script.sh is executable using below command
 ```important
 chmod +x script_name.sh
 
 `for e.g.,`
 
 chmod +x test.sh
+```
+
+### Start Server
+Below command to start automation server
+```start_server
+
+go run main.go
+
 ```
