@@ -2,48 +2,103 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"log"
 	"net/http"
 	"os"
-	"log"
+	"os/exec"
+	"path/filepath"
 )
 
-func responseHandler(w http.ResponseWriter, r *http.Request) {
+type RequestBody struct {
+	Service string `json:"service"`
+	Action  string `json:"action"`
+}
+
+const AUTH_TOKEN = "HACKSHIP-COMM"
+
+// global config map
+var serviceDir map[string]map[string]string
+
+func jsonParser(filePath string) error {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	serviceDir = make(map[string]map[string]string)
+
+	if err := json.Unmarshal(data, &serviceDir); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func scriptRuntime(scriptPath string) {
+	go func() {
+		cmd := exec.Command("/bin/bash", scriptPath)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("script failed: %v\noutput: %s", err, output)
+			return
+		}
+		log.Printf("script executed successfully:\n%s", output)
+	}()
+}
+
+func requestHandler(w http.ResponseWriter, r *http.Request) {
+	// Only allow POST
 	if r.Method != http.MethodPost {
-		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	fmt.Fprintln(w, "POST request received successfully!")
-}
-
-func jsonParser(filePath string) string {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return "fail"
+	// Auth check
+	if r.Header.Get("Authorization") != AUTH_TOKEN {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
 	}
 
-	var config map[string]map[string]string
-	err = json.Unmarshal(data, &config)
-	if err != nil {
-		return "jsonParser: error"
+	var payload RequestBody
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
 	}
 
-	return "jsonParser: success"
+	serviceMap, serviceExists := serviceDir[payload.Service]
+	if !serviceExists {
+		http.Error(w, "service not found", http.StatusNotFound)
+		return
+	}
+
+	scriptPath, scriptExists := serviceMap[payload.Action]
+	if !scriptExists {
+		http.Error(w, "action not found", http.StatusNotFound)
+		return
+	}
+
+	scriptRuntime(scriptPath)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("script started"))
 }
 
 func main() {
-	rootDir, _ := os.Getwd()
-	filePath := rootDir + "/config.json"
+	rootDir, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	result := jsonParser(filePath)
-	fmt.Println(result)
+	filePath := filepath.Join(rootDir, "config.json")
 
-	http.HandleFunc("/", responseHandler);
-	fmt.Println("Server running on http://localhost:8080")
-	err := http.ListenAndServe("8080", nil)
-	
-	if err != nil{
-		log.Fatal("HTTP Server Error: ", err)
+	if err := jsonParser(filePath); err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+
+	http.HandleFunc("/", requestHandler)
+
+	log.Println("Server running on http://localhost:8080")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatal("HTTP Server Error:", err)
 	}
 }
