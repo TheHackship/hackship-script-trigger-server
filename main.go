@@ -13,6 +13,7 @@ func responseHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
 	fmt.Fprintln(w, "POST request received successfully!")
 }
 

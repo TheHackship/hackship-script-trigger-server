@@ -37,6 +37,6 @@ A request-driven server that executes automation scripts for infrastructure oper
 ```
 ### HLD
 ---
-![Project Logo](./hld.jpeg)
+![Project Logo](./docs/hld.jpeg)
 
 
