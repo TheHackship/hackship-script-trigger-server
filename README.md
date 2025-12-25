@@ -6,7 +6,15 @@ A request-driven server that executes automation scripts for infrastructure oper
 - GoLang
 
 ## Project Structure
-- TBA
+```project_structure
+hackship-automation-server/
+├── docs/
+│   └──                # Documentation, diagrams, notes
+├── config.json        # Service → action → script mapping
+├── main.go            # Application entry point (HTTP server + runtime)
+├── README.md          # Project documentation
+
+```
 
 ## Components
 - `Script Engine`
