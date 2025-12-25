@@ -48,3 +48,13 @@ hackship-automation-server/
 ![Project Logo](./docs/hld.jpeg)
 
 
+### Important
+---
+ensure that script.sh is executable using below command
+```important
+chmod +x script_name.sh
+
+`for e.g.,`
+
+chmod +x test.sh
+```
