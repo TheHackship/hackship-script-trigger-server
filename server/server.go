@@ -3,18 +3,32 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 )
 
 var AUTH_TOKEN string
+var PORT int
 
 func init() {
 	AUTH_TOKEN = os.Getenv("AUTH_TOKEN")
 	if AUTH_TOKEN == "" {
 		AUTH_TOKEN = "HACKSHIP-COMM"
+	}
+
+	portStr := os.Getenv("PORT")
+	if portStr == "" {
+		PORT = 8080 // default
+	} else {
+		p, err := strconv.Atoi(portStr)
+		if err != nil {
+			log.Fatalf("[SERVER]> invalid PORT value: %s", portStr)
+		}
+		PORT = p
 	}
 }
 
@@ -42,7 +56,7 @@ func NewServer(ctx context.Context, mp map[string]map[string]string, runnerChan 
 	mux.HandleFunc("/", s.requestHandler)
 
 	s.httpServer = &http.Server{
-		Addr:    ":8080",
+		Addr:    fmt.Sprintf(":%d", PORT),
 		Handler: mux,
 	}
 
@@ -52,7 +66,7 @@ func NewServer(ctx context.Context, mp map[string]map[string]string, runnerChan 
 func (s *Server) Start() {
 	// Start HTTP server
 	go func() {
-		log.Println("[SERVER]> Server running on http://localhost:8080")
+		log.Printf("[SERVER]> Server running on http://localhost:%d\n", PORT)
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("[SERVER]> HTTP Server Error: %v", err)
 		}
