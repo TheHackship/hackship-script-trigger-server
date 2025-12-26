@@ -3,20 +3,12 @@ package main
 import (
 	"encoding/json"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"script_trigger_server/runner"
+	"script_trigger_server/server"
 )
 
-type RequestBody struct {
-	Service string `json:"service"`
-	Action  string `json:"action"`
-}
-
-const AUTH_TOKEN = "HACKSHIP-COMM"
-
-// global config map
 var scriptChan = make(chan string)
 var serviceDir map[string]map[string]string
 
@@ -33,45 +25,6 @@ func jsonParser(filePath string) error {
 	}
 
 	return nil
-}
-
-func requestHandler(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
-
-	// Only allow POST
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Auth check
-	if r.Header.Get("Authorization") != AUTH_TOKEN {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	var payload RequestBody
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-
-	serviceMap, serviceExists := serviceDir[payload.Service]
-	if !serviceExists {
-		http.Error(w, "service not found", http.StatusNotFound)
-		return
-	}
-
-	scriptPath, scriptExists := serviceMap[payload.Action]
-	if !scriptExists {
-		http.Error(w, "action not found", http.StatusNotFound)
-		return
-	}
-
-	scriptChan <- scriptPath
-
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("script started"))
 }
 
 func main() {
@@ -91,13 +44,8 @@ func main() {
 	go r.Start()
 
 	// Start HTTP server in goroutine
-	go func() {
-		http.HandleFunc("/", requestHandler)
-		log.Println("Server running on http://localhost:8080")
-		if err := http.ListenAndServe(":8080", nil); err != nil {
-			log.Fatal("HTTP Server Error:", err)
-		}
-	}()
+	s := server.NewServer(serviceDir, scriptChan)
+	go s.Start()
 
 	select {}
 }
