@@ -1,9 +1,5 @@
 {
     "service_name": {
         "action_name": "script_path_relative_to_curr_dir"
-    },
-    "test_service": {
-        "HELLO": "./test.sh",
-        "HELLO2": "/mnt/bdrive2/sample.sh"
     }
 }

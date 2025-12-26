@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"os"
+	"os/signal"
 	"script_trigger_server/runner"
 	"script_trigger_server/server"
+	"sync"
+	"syscall"
 )
 
 func configFileParser(filePath string) (map[string]map[string]string, error) {
@@ -24,21 +28,46 @@ func configFileParser(filePath string) (map[string]map[string]string, error) {
 }
 
 func main() {
-	scriptChan := make(chan string)
+	// Buffered channel
+	scriptChan := make(chan string, 10)
 
 	// Parse config file
 	configMap, err := configFileParser("./config.json")
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		log.Fatalf("[MAIN]> failed to load config: %v", err)
 	}
 
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	var wg sync.WaitGroup
+
 	// Start script runner
-	r := runner.NewRunner(scriptChan)
-	go r.Start()
+	wg.Add(1)
+	r := runner.NewRunner(ctx, scriptChan)
+	go func() {
+		defer wg.Done()
+		r.Start()
+	}()
 
 	// Start HTTP server in goroutine
-	s := server.NewServer(configMap, scriptChan)
-	go s.Start()
+	wg.Add(1)
+	s := server.NewServer(ctx, configMap, scriptChan)
+	go func() {
+		defer wg.Done()
+		s.Start()
+	}()
 
-	select {}
+	// Wait for shutdown signal
+	<-ctx.Done()
+
+	// Close channel to stop runner cleanly
+	close(scriptChan)
+
+	wg.Wait()
+	log.Println("[MAIN]> Application exited")
 }

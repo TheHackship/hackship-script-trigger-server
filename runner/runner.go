@@ -8,19 +8,33 @@ import (
 )
 
 type Runner struct {
-	ch <-chan string
+	ch  <-chan string
+	ctx context.Context
 }
 
-func NewRunner(ch <-chan string) Runner {
-	return Runner{
-		ch: ch,
+func NewRunner(ctx context.Context, ch <-chan string) *Runner {
+	return &Runner{
+		ch:  ch,
+		ctx: ctx,
 	}
 }
 
 func (r *Runner) Start() {
-	for scriptPath := range r.ch {
-		r.scriptRuntime(scriptPath)
+	log.Println("[RUNNER]> Runtime started")
+	for {
+		select {
+		case <-r.ctx.Done():
+			log.Println("[RUNNER]> Shutting down script runner...")
+			return
+		case script, ok := <-r.ch:
+			if !ok {
+				log.Println("[RUNNER]> Script channel closed, runner exiting")
+				return
+			}
+			r.scriptRuntime(script)
+		}
 	}
+
 }
 
 func (r *Runner) scriptRuntime(scriptPath string) {
@@ -31,8 +45,8 @@ func (r *Runner) scriptRuntime(scriptPath string) {
 	cmd := exec.CommandContext(ctx, scriptPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("script failed: %v\noutput: %s", err, output)
+		log.Printf("[RUNNER]> script failed: %v\noutput: %s", err, output)
 		return
 	}
-	log.Printf("script executed successfully:\n%s", output)
+	log.Printf("[RUNNER]> '%s' executed successfully:\n%s", scriptPath, output)
 }

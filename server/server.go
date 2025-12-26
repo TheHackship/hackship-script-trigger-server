@@ -1,12 +1,22 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"time"
 )
 
-const AUTH_TOKEN = "HACKSHIP-COMM"
+var AUTH_TOKEN string
+
+func init() {
+	AUTH_TOKEN = os.Getenv("AUTH_TOKEN")
+	if AUTH_TOKEN == "" {
+		AUTH_TOKEN = "HACKSHIP-COMM"
+	}
+}
 
 type RequestBody struct {
 	Service string `json:"service"`
@@ -16,33 +26,60 @@ type RequestBody struct {
 type Server struct {
 	serviceActionToScriptPathMap map[string]map[string]string
 	scriptRunnerChan             chan string
+	ctx                          context.Context
+	httpServer                   *http.Server
 }
 
-func NewServer(mp map[string]map[string]string, runnerChan chan string) Server {
-	return Server{
+func NewServer(ctx context.Context, mp map[string]map[string]string, runnerChan chan string) *Server {
+	mux := http.NewServeMux()
+
+	s := &Server{
 		serviceActionToScriptPathMap: mp,
 		scriptRunnerChan:             runnerChan,
+		ctx:                          ctx,
 	}
+
+	mux.HandleFunc("/", s.requestHandler)
+
+	s.httpServer = &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
+
+	return s
 }
 
 func (s *Server) Start() {
-	http.HandleFunc("/", s.requestHandler)
-	log.Println("Server running on http://localhost:8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatal("HTTP Server Error:", err)
+	// Start HTTP server
+	go func() {
+		log.Println("[SERVER]> Server running on http://localhost:8080")
+		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("[SERVER]> HTTP Server Error: %v", err)
+		}
+	}()
+
+	// Wait for context cancellation
+	<-s.ctx.Done()
+	log.Println("[SERVER]> Shutting down HTTP server...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("[SERVER]> HTTP shutdown error: %v", err)
 	}
 }
 
 func (s *Server) requestHandler(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
+	ctx := r.Context()
 
-	// Only allow POST
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Auth check
 	if r.Header.Get("Authorization") != AUTH_TOKEN {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -54,20 +91,24 @@ func (s *Server) requestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serviceMap, serviceExists := s.serviceActionToScriptPathMap[payload.Service]
-	if !serviceExists {
+	serviceMap, ok := s.serviceActionToScriptPathMap[payload.Service]
+	if !ok {
 		http.Error(w, "service not found", http.StatusNotFound)
 		return
 	}
 
-	scriptPath, scriptExists := serviceMap[payload.Action]
-	if !scriptExists {
+	scriptPath, ok := serviceMap[payload.Action]
+	if !ok {
 		http.Error(w, "action not found", http.StatusNotFound)
 		return
 	}
 
-	s.scriptRunnerChan <- scriptPath
+	select {
+	case s.scriptRunnerChan <- scriptPath:
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("script started"))
+	case <-ctx.Done():
+		http.Error(w, "request cancelled", http.StatusRequestTimeout)
+	}
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("script started"))
 }
